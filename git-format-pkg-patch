@@ -211,6 +211,46 @@ def do_remix_spec(args):
             print ref.ljust(15), pname
 
 
+def add_new_patches(args):
+    '''
+    Adds new patch definitions to spec file.
+
+    :param: specfile
+    :return:
+    '''
+    if not os.path.exists(args.apply or ''):
+        raise IOError('Specfile {0} is not accessible or is somewhere else'.format(args.apply))
+    if not os.path.exists(args.ordering or ''):
+        args.ordering = './{0}'.format(ORDERING_FILE)
+        if not os.path.exists(args.ordering):
+            raise IOError('Ordering file is expected "./{0}" but is not visible'.format(ORDERING_FILE))
+
+    spec_patches = open(args.ordering).read().split(os.linesep)
+    # remove everthing that is empty, starts with an # or %patch
+    patches = [patch for patch in spec_patches if patch and not patch.startswith("#") and not patch.startswith("%patch")]
+    patch_number = len(patches)
+
+    # Add the patch definition
+    with open(args.apply, 'r') as file:
+        spec_data = file.readlines()
+    for i, line in enumerate(spec_data):
+        if re.match(r'^[Pp]atch{}+:'.format(patch_number-1), line):
+            spec_data.insert(i+1, '# Description N/A\n')
+            spec_data.insert(i+2, "{}\n".format(patches[-1]))
+            break
+
+    # Add the patch application
+    for i, line in enumerate(spec_data):
+        if re.match(r'^%patch{}'.format(patch_number-1), line):
+            spec_data.insert(i+1, "%patch{} -p1\n".format(patch_number))
+            break
+
+    # overwrite original spec file
+    with open(args.apply, 'w') as file:
+        file.writelines(spec_data)
+    return
+
+
 def do_create_patches(args):
     '''
     Create and reformat patches for the package.
@@ -330,6 +370,8 @@ def main():
                         help='specify start ordering index. Default: 0')
     parser.add_argument('-s', '--spec', action='store', const=None,
                         help='remix spec file and extract sources with their comments to match new patch ordering')
+    parser.add_argument('-a', '--apply', action='store', const=None,
+                        help='Apply changes to spec file. This will add a new patche to the spec file.')
     parser.add_argument('-i', '--increment', action='store_const', const=True,
                         help='use increments for unique names when patch commits repeated')
     parser.add_argument('-c', '--changed', action='store_const', const=True,
@@ -351,6 +393,8 @@ def main():
             print "Version: {0}".format(VERSION)
         elif args.spec:
             do_remix_spec(args)
+        elif args.apply:
+            add_new_patches(args)
         elif args.update and not args.format:
             do_update_patches(args)
         elif (args.format and not args.update) or args.existing:
